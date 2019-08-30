@@ -8,46 +8,67 @@ Created on Sat Jun 22 00:36:26 2019
 import numpy as np
 
 class Robust:
-    def __init__(self, mx, e):
+    def __init__(self, train_x, train_y, target_theta, fs, e):
         #self.l = l
         #self.h = h
         #self.p = p #shuffle
-        self.X = None #.shape = (nx, mx)
-        self.Y = None #.shape = (1, mx)
-        self.PI = None
-        self.mx = mx
+        
+        self.train_x = train_x
+        self.train_y = train_y
+        self.target_theta = target_theta
+        self.fs = fs
+        
+        self.mtrain = train_x.shape[1]
+        self.nx = train_x.shape[0]
+        self.ny = train_y.shape[0]
+        self.n = len(fs)
+        
+        self.PI = self.gen_PI()
         self.parameters = {}
         self.e = e
         self.pred_y = []
         self.loss = []
-        self.epochs = []
-        self.train_x_list, self.train_y_list, self.test_x_list, self.test_y_list \
-            = None, None, None, None
+        self.epochs = None
         
-    def initialize_parameters(self, mx):
-        self.parameters['theta'] = np.random.randn(1, mx)
-        self.parameters['z'] = np.random.randn(1, mx)
-        self.parameters['u'] = np.random.randn(1, mx)
+    def initialize_parameters(self, n):
+        self.parameters['theta'] = np.random.randn(1, n)
+        self.parameters['r'] = np.random.randn(1, n)
+        self.parameters['u'] = np.random.randn(1, n)
 
-    def optimize_robust(self, PI, parameters, X, Y, threshold = .3):
+    def target_function(self, X, theta, ny):
+        Y = np.zeros((ny, X.shape[1]))
+        fs = self.gen_fs()
+        for j in len(fs):
+            Y += theta[j] * fs['f' + str(j)](X)
+        return Y
+
+    def optimize_robust(self, PI, parameters, X, threshold = .3):
         # r.shape = (mx, mx)
         # e: constant
         parameters = parameters
         num_epoch = 0
         while True:
+            num_epoch += 1
             theta = parameters['theta']
-            r = parameters['r']
+            Y_hat = self.target_function(X, theta, self.ny)
+            #build W
+            r = np.abs(Y_hat - self.train_y) # residue
             w = (np.abs(r) <= self.e) + (np.abs(r) > self.e) * np.divide(self.e, r)
             W = np.diag(w)
-            new_theta = np.linalg.inv(PI.T.dot(W).dot(PI)).dot(PI.T).dot(W).dot(Y)
-            f_temp = self.gen_f(theta)
-            new_r = f_temp(X) - Y #.shape = (1, m)
+            #update theta
+            new_theta = np.linalg.inv(PI.T.dot(W).dot(PI)).dot(PI.T).dot(W).dot(self.train_y)
             parameters['theta'] = new_theta
-            parameters['r'] = new_r
-
-        self.epochs.append(num_epoch)
+            l2 = np.linalg.norm(new_theta - self.target_theta)
+            if num_epoch % 100 == 0:
+                print('epoch: ' + str(num_epoch) + '\t l2 = ' + str(l2))
+            if l2 < threshold:
+                break
+        print('epoch: ' + str(num_epoch) + '\t l2 = ' + str(l2))
+        self.epochs = num_epoch
+    
+    def gen_PI(self, fs, X):
+        PI = 
         
-    def gen_f(self, theta):
         return 
     
     def gen_mat_kernel(self, X, C, h):
@@ -57,11 +78,7 @@ class Robust:
         
         #.shape = (mx, mc)
         return np.exp(- np.linalg.norm(mat_kernel, axis = 0, keepdims = False) / 2 / h**2 )
-    
-    def gen_PI(self, X, ground_functions):
-        # X.shape = (nx, mx)
-        # ground_functions return arr(.shape = (n,1))
-        ground_functions()
+
 
     def cross_val(self, train_x, test_x, test_y, h, parameters):
         K_test = self.gen_mat_kernel(train_x, test_x, h) #.shape = (mtrain, mtest)
